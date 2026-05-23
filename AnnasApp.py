@@ -9,18 +9,30 @@ st.markdown("""
 <style>
     .block-container {
         padding-top: 1rem;
-        padding-left: 1rem;
-        padding-right: 1rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
         max-width: 480px;
     }
-    h2 { font-size: 1.8rem !important; letter-spacing: 0.25rem; }
-    h3 { font-size: 1.1rem !important; }
+
+    /* Make all letter buttons small and square */
+    div.stButton > button {
+        padding: 0 !important;
+        width: 36px !important;
+        height: 36px !important;
+        min-height: 36px !important;
+        font-size: 0.85rem !important;
+        font-weight: bold !important;
+        border-radius: 6px !important;
+        margin: 1px auto !important;
+        display: block !important;
+    }
+
+    /* Remove extra column padding so buttons pack tightly */
+    div[data-testid="column"] {
+        padding: 0 2px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
-
-# -----------------------------
-# Word database
-# -----------------------------
 
 word_df = pd.DataFrame({
     "Word": [
@@ -75,10 +87,6 @@ word_df = pd.DataFrame({
     "Date": pd.date_range(start="2026-05-14", periods=15).repeat(2).strftime("%Y-%m-%d")
 })
 
-# -----------------------------
-# Get today's word (first one only)
-# -----------------------------
-
 todays_date = datetime.today().strftime('%Y-%m-%d')
 todays_rows = word_df[word_df["Date"] == todays_date]
 
@@ -88,10 +96,6 @@ if todays_rows.empty:
 
 word = todays_rows["Word"].iloc[0].upper()
 desc = todays_rows["Description"].iloc[0]
-
-# -----------------------------
-# Session state
-# -----------------------------
 
 key = "w1"
 
@@ -104,24 +108,6 @@ if f"game_over_{key}" not in st.session_state:
 if f"popup_done_{key}" not in st.session_state:
     st.session_state[f"popup_done_{key}"] = False
 
-# -----------------------------
-# Handle letter click via query param
-# -----------------------------
-
-params = st.query_params
-if "letter" in params and not st.session_state[f"game_over_{key}"]:
-    letter = params["letter"].upper()
-    if letter in string.ascii_uppercase and letter not in st.session_state[f"clicked_{key}"]:
-        st.session_state[f"clicked_{key}"].add(letter)
-        if letter not in word:
-            st.session_state[f"wrong_{key}"] += 1
-    st.query_params.clear()
-    st.rerun()
-
-# =========================================================
-# POPUPS
-# =========================================================
-
 @st.dialog("🎉 You Win!")
 def win_popup(w):
     st.image("win.jpg", use_container_width=True)
@@ -132,82 +118,35 @@ def lose_popup(w):
     st.image("lose.jpg", use_container_width=True)
     st.markdown(f"<h2 style='text-align:center;'>The word was {w}</h2>", unsafe_allow_html=True)
 
-# =========================================================
-# UI
-# =========================================================
-
 st.markdown("<h2 style='text-align:center;'>Daily Word Learner 💛</h2>", unsafe_allow_html=True)
-st.markdown(f"<h3 style='text-align:center;'>{desc}</h3>", unsafe_allow_html=True)
+st.markdown(f"<p style='text-align:center; font-size:1.1rem;'>{desc}</p>", unsafe_allow_html=True)
 
-# Hangman image
-left, center, right = st.columns([1, 2, 1])
-with center:
-    st.image(f"step{st.session_state[f'wrong_{key}']}.PNG", width=140)
+col1, col2, col3 = st.columns([1, 1, 1])
+with col2:
+    st.image(f"step{st.session_state[f'wrong_{key}']}.PNG", width=120)
 
-# Word display
 display_word = [l if l in st.session_state[f"clicked_{key}"] else "_" for l in word]
 st.markdown(
-    f"<h2 style='text-align:center;'>{' '.join(display_word)}</h2>",
+    f"<h2 style='text-align:center; letter-spacing:0.3rem;'>{' '.join(display_word)}</h2>",
     unsafe_allow_html=True
 )
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# -----------------------------
-# Keyboard — HTML grid, works on all screen sizes
-# -----------------------------
-
 if not st.session_state[f"game_over_{key}"]:
-    clicked = st.session_state[f"clicked_{key}"]
+    letters = list(string.ascii_uppercase)
+    rows = [letters[:13], letters[13:]]
 
-    buttons_html = ""
-    for letter in string.ascii_uppercase:
-        used = letter in clicked
-        correct = letter in word and letter in clicked
-
-        if used:
-            if correct:
-                style = "background:#4caf50;color:white;opacity:0.5;cursor:default;"
-            else:
-                style = "background:#e0e0e0;color:#aaa;opacity:0.5;cursor:default;"
-            btn = f'<button style="{style}" disabled>{letter}</button>'
-        else:
-            btn = f'<a href="?letter={letter}" style="text-decoration:none;"><button>{letter}</button></a>'
-
-        buttons_html += btn
-
-    st.markdown(f"""
-    <style>
-    .keyboard {{
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        justify-content: center;
-        margin: 0 auto;
-        max-width: 400px;
-    }}
-    .keyboard button {{
-        width: 44px;
-        height: 44px;
-        font-size: 1rem;
-        font-weight: bold;
-        border: 2px solid #555;
-        border-radius: 8px;
-        background: white;
-        color: #333;
-        cursor: pointer;
-        touch-action: manipulation;
-    }}
-    .keyboard button:active {{
-        background: #ddd;
-    }}
-    </style>
-    <div class="keyboard">{buttons_html}</div>
-    """, unsafe_allow_html=True)
-
-# -----------------------------
-# Win / Lose checks
-# -----------------------------
+    for row in rows:
+        cols = st.columns(len(row))
+        for i, letter in enumerate(row):
+            with cols[i]:
+                used = letter in st.session_state[f"clicked_{key}"]
+                if st.button(letter, key=f"{key}_{letter}", disabled=used):
+                    st.session_state[f"clicked_{key}"].add(letter)
+                    if letter not in word:
+                        st.session_state[f"wrong_{key}"] += 1
+                    st.rerun()
 
 if st.session_state[f"wrong_{key}"] >= 8 and not st.session_state[f"game_over_{key}"]:
     st.session_state[f"game_over_{key}"] = True
