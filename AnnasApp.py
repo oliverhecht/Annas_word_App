@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import string
 
 st.set_page_config(page_title="Daily Word", layout="centered")
 
@@ -13,21 +12,9 @@ st.markdown("""
         padding-right: 0.5rem;
         max-width: 480px;
     }
-
-    div.stButton > button {
-        padding: 0 !important;
-        width: 36px !important;
-        height: 36px !important;
-        min-height: 36px !important;
-        font-size: 0.85rem !important;
-        font-weight: bold !important;
-        border-radius: 6px !important;
-        margin: 1px auto !important;
-        display: block !important;
-    }
-
-    div[data-testid="column"] {
-        padding: 0 2px !important;
+    /* Hide the text input we use as a JS bridge */
+    div[data-testid="stTextInput"] {
+        display: none;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -106,6 +93,17 @@ if f"game_over_{key}" not in st.session_state:
 if f"popup_done_{key}" not in st.session_state:
     st.session_state[f"popup_done_{key}"] = False
 
+# Hidden text input as JS bridge — letter gets typed into it by JS, triggering a rerun
+typed = st.text_input("letter_bridge", key="letter_bridge", label_visibility="hidden")
+
+if typed and typed not in st.session_state[f"clicked_{key}"] and not st.session_state[f"game_over_{key}"]:
+    st.session_state[f"clicked_{key}"].add(typed)
+    if typed not in target_word:
+        st.session_state[f"wrong_{key}"] += 1
+    # Clear the bridge and rerun
+    st.session_state["letter_bridge"] = ""
+    st.rerun()
+
 @st.dialog("🎉 You Win!")
 def win_popup(w):
     st.image("win.jpg", use_container_width=True)
@@ -131,24 +129,43 @@ st.markdown(
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Wordle-style keyboard
+# Build Wordle-style HTML keyboard
 if not st.session_state[f"game_over_{key}"]:
-    rows = [
-        list("QWERTYUIOP"),
-        list("ASDFGHJKL"),
-        list("ZXCVBNM")
-    ]
+    clicked = st.session_state[f"clicked_{key}"]
+    rows = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"]
 
+    rows_html = ""
     for row in rows:
-        cols = st.columns(len(row))
-        for i, letter in enumerate(row):
-            with cols[i]:
-                used = letter in st.session_state[f"clicked_{key}"]
-                if st.button(letter, key=f"{key}_{letter}", disabled=used):
-                    st.session_state[f"clicked_{key}"].add(letter)
-                    if letter not in target_word:
-                        st.session_state[f"wrong_{key}"] += 1
-                    st.rerun()
+        row_html = '<div style="display:flex;justify-content:center;gap:5px;margin-bottom:5px;">'
+        for letter in row:
+            used = letter in clicked
+            correct = letter in target_word and letter in clicked
+            if used:
+                bg = "#4caf50" if correct else "#ccc"
+                fg = "white" if correct else "#999"
+                row_html += f'<button style="width:34px;height:44px;background:{bg};color:{fg};border:none;border-radius:6px;font-weight:bold;font-size:0.9rem;" disabled>{letter}</button>'
+            else:
+                row_html += f'<button onclick="pick(\'{letter}\')" style="width:34px;height:44px;background:#818384;color:white;border:none;border-radius:6px;font-weight:bold;font-size:0.9rem;cursor:pointer;touch-action:manipulation;">{letter}</button>'
+        row_html += '</div>'
+        rows_html += row_html
+
+    keyboard_html = f"""
+    <div style="padding:4px 0;">
+        {rows_html}
+    </div>
+    <script>
+    function pick(l) {{
+        // Find the hidden Streamlit text input and update it
+        const inputs = window.parent.document.querySelectorAll('input[type=text]');
+        for (const inp of inputs) {{
+            inp.value = l;
+            inp.dispatchEvent(new Event('input', {{bubbles: true}}));
+        }}
+    }}
+    </script>
+    """
+
+    st.components.v1.html(keyboard_html, height=160)
 
 if st.session_state[f"wrong_{key}"] >= 8 and not st.session_state[f"game_over_{key}"]:
     st.session_state[f"game_over_{key}"] = True
