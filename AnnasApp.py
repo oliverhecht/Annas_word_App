@@ -3,6 +3,33 @@ import pandas as pd
 from datetime import datetime
 import string
 
+st.set_page_config(page_title="Daily Word", layout="centered")
+
+# Mobile-friendly CSS
+st.markdown("""
+<style>
+    /* Wider buttons, easier to tap */
+    div.stButton > button {
+        width: 100%;
+        min-height: 48px;
+        font-size: 1.1rem;
+        font-weight: bold;
+        border-radius: 8px;
+    }
+    /* Tighten up padding on mobile */
+    .block-container {
+        padding-top: 1rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    /* Larger word display */
+    h2 {
+        font-size: 2rem !important;
+        letter-spacing: 0.3rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # -----------------------------
 # Word database
 # -----------------------------
@@ -61,7 +88,7 @@ word_df = pd.DataFrame({
 })
 
 # -----------------------------
-# Get today's words
+# Get today's word (first one only)
 # -----------------------------
 
 todays_date = datetime.today().strftime('%Y-%m-%d')
@@ -71,19 +98,17 @@ if todays_rows.empty:
     st.error("No word set for today.")
     st.stop()
 
-word_list = todays_rows["Word"].tolist()
-desc_list = todays_rows["Description"].tolist()
+word = todays_rows["Word"].iloc[0]
+desc = todays_rows["Description"].iloc[0]
 
 # -----------------------------
 # Title
 # -----------------------------
 
 st.markdown(
-    "<h2 style='text-align: center;'>Welcome to your daily word learner &lt;3</h2>",
+    "<h2 style='text-align: center;'>Daily Word Learner 💛</h2>",
     unsafe_allow_html=True
 )
-
-tab1, tab2 = st.tabs(["Word 1", "Word 2"])
 
 # =========================================================
 # POPUPS
@@ -106,94 +131,75 @@ def lose_popup(word):
     )
 
 # =========================================================
-# WORD GAME FUNCTION (clean logic reused)
+# GAME
 # =========================================================
 
-def run_game(key, word, desc):
+key = "w1"
+word = word.upper()
 
-    word = word.upper()
+if f"clicked_{key}" not in st.session_state:
+    st.session_state[f"clicked_{key}"] = set()
 
-    # ---------------- state ----------------
-    if f"clicked_{key}" not in st.session_state:
-        st.session_state[f"clicked_{key}"] = set()
+if f"wrong_{key}" not in st.session_state:
+    st.session_state[f"wrong_{key}"] = 1
 
-    if f"wrong_{key}" not in st.session_state:
-        st.session_state[f"wrong_{key}"] = 1
+if f"game_over_{key}" not in st.session_state:
+    st.session_state[f"game_over_{key}"] = False
 
-    if f"game_over_{key}" not in st.session_state:
-        st.session_state[f"game_over_{key}"] = False
+if f"popup_done_{key}" not in st.session_state:
+    st.session_state[f"popup_done_{key}"] = False
 
-    if f"popup_done_{key}" not in st.session_state:
-        st.session_state[f"popup_done_{key}"] = False
+# Description
+st.markdown(
+    f"<h3 style='text-align:center;'>{desc}</h3>",
+    unsafe_allow_html=True
+)
 
-    # ---------------- UI ----------------
-    st.markdown(
-        f"<h3 style='text-align:center;'>{desc}</h3>",
-        unsafe_allow_html=True
-    )
+# Hangman image — centred
+left, center, right = st.columns([1, 2, 1])
+with center:
+    st.image(f"step{st.session_state[f'wrong_{key}']}.PNG", width=260)
 
-    left, center, right = st.columns([1, 2, 1])
-    with center:
-        st.image(f"step{st.session_state[f'wrong_{key}']}.PNG", width=300)
+# Word display
+display_word = [
+    l if l in st.session_state[f"clicked_{key}"] else "_"
+    for l in word
+]
 
-    display_word = [
-        l if l in st.session_state[f"clicked_{key}"] else "_"
-        for l in word
-    ]
+st.markdown(
+    f"<h2 style='text-align:center;'>{' '.join(display_word)}</h2>",
+    unsafe_allow_html=True
+)
 
-    st.markdown(
-        f"<h2 style='text-align:center;'>{' '.join(display_word)}</h2>",
-        unsafe_allow_html=True
-    )
+st.markdown("<br>", unsafe_allow_html=True)
 
-    # ---------------- buttons ----------------
-    if not st.session_state[f"game_over_{key}"]:
-        cols = st.columns(8)
+# Letter buttons — 6 columns for better mobile sizing
+if not st.session_state[f"game_over_{key}"]:
+    cols = st.columns(6)
+    for i, letter in enumerate(string.ascii_uppercase):
+        with cols[i % 6]:
+            used = letter in st.session_state[f"clicked_{key}"]
+            if st.button(letter, key=f"{key}_{letter}", disabled=used):
+                st.session_state[f"clicked_{key}"].add(letter)
+                if letter not in word:
+                    st.session_state[f"wrong_{key}"] += 1
 
-        for i, letter in enumerate(string.ascii_uppercase):
-            with cols[i % 8]:
+# Lose
+if (
+    st.session_state[f"wrong_{key}"] >= 8
+    and not st.session_state[f"game_over_{key}"]
+):
+    st.session_state[f"game_over_{key}"] = True
+    if not st.session_state[f"popup_done_{key}"]:
+        st.session_state[f"popup_done_{key}"] = True
+        lose_popup(word)
 
-                used = letter in st.session_state[f"clicked_{key}"]
-
-                if st.button(
-                    letter,
-                    key=f"{key}_{letter}",
-                    disabled=used
-                ):
-
-                    st.session_state[f"clicked_{key}"].add(letter)
-
-                    if letter not in word:
-                        st.session_state[f"wrong_{key}"] += 1
-
-    # ---------------- lose ----------------
-    if (
-        st.session_state[f"wrong_{key}"] >= 8
-        and not st.session_state[f"game_over_{key}"]
-    ):
-        st.session_state[f"game_over_{key}"] = True
-
-        if not st.session_state[f"popup_done_{key}"]:
-            st.session_state[f"popup_done_{key}"] = True
-            lose_popup(word)
-
-    # ---------------- win ----------------
-    if (
-        "_" not in display_word
-        and not st.session_state[f"game_over_{key}"]
-    ):
-        st.session_state[f"game_over_{key}"] = True
-
-        if not st.session_state[f"popup_done_{key}"]:
-            st.session_state[f"popup_done_{key}"] = True
-            win_popup(word)
-
-# =========================================================
-# RUN TABS
-# =========================================================
-
-with tab1:
-    run_game("w1", word_list[0], desc_list[0])
-
-with tab2:
-    run_game("w2", word_list[1], desc_list[1])
+# Win
+if (
+    "_" not in display_word
+    and not st.session_state[f"game_over_{key}"]
+):
+    st.session_state[f"game_over_{key}"] = True
+    if not st.session_state[f"popup_done_{key}"]:
+        st.session_state[f"popup_done_{key}"] = True
+        win_popup(word)
