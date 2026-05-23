@@ -14,7 +14,6 @@ st.markdown("""
         max-width: 480px;
     }
 
-    /* Make all letter buttons small and square */
     div.stButton > button {
         padding: 0 !important;
         width: 36px !important;
@@ -27,7 +26,6 @@ st.markdown("""
         display: block !important;
     }
 
-    /* Remove extra column padding so buttons pack tightly */
     div[data-testid="column"] {
         padding: 0 2px !important;
     }
@@ -94,7 +92,7 @@ if todays_rows.empty:
     st.error("No word set for today.")
     st.stop()
 
-word = todays_rows["Word"].iloc[0].upper()
+target_word = todays_rows["Word"].iloc[0].upper()
 desc = todays_rows["Description"].iloc[0]
 
 key = "w1"
@@ -125,7 +123,7 @@ col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
     st.image(f"step{st.session_state[f'wrong_{key}']}.PNG", width=120)
 
-display_word = [l if l in st.session_state[f"clicked_{key}"] else "_" for l in word]
+display_word = [l if l in st.session_state[f"clicked_{key}"] else "_" for l in target_word]
 st.markdown(
     f"<h2 style='text-align:center; letter-spacing:0.3rem;'>{' '.join(display_word)}</h2>",
     unsafe_allow_html=True
@@ -133,9 +131,13 @@ st.markdown(
 
 st.markdown("<br>", unsafe_allow_html=True)
 
+# Wordle-style keyboard
 if not st.session_state[f"game_over_{key}"]:
-    letters = list(string.ascii_uppercase)
-    rows = [letters[:13], letters[13:]]
+    rows = [
+        list("QWERTYUIOP"),
+        list("ASDFGHJKL"),
+        list("ZXCVBNM")
+    ]
 
     for row in rows:
         cols = st.columns(len(row))
@@ -144,7 +146,7 @@ if not st.session_state[f"game_over_{key}"]:
                 used = letter in st.session_state[f"clicked_{key}"]
                 if st.button(letter, key=f"{key}_{letter}", disabled=used):
                     st.session_state[f"clicked_{key}"].add(letter)
-                    if letter not in word:
+                    if letter not in target_word:
                         st.session_state[f"wrong_{key}"] += 1
                     st.rerun()
 
@@ -152,10 +154,10 @@ if st.session_state[f"wrong_{key}"] >= 8 and not st.session_state[f"game_over_{k
     st.session_state[f"game_over_{key}"] = True
     if not st.session_state[f"popup_done_{key}"]:
         st.session_state[f"popup_done_{key}"] = True
-        lose_popup(word)
+        lose_popup(target_word)
 
 if "_" not in display_word and not st.session_state[f"game_over_{key}"]:
     st.session_state[f"game_over_{key}"] = True
     if not st.session_state[f"popup_done_{key}"]:
         st.session_state[f"popup_done_{key}"] = True
-        win_popup(word)
+        win_popup(target_word)
