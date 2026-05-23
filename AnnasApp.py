@@ -5,28 +5,16 @@ import string
 
 st.set_page_config(page_title="Daily Word", layout="centered")
 
-# Mobile-friendly CSS
 st.markdown("""
 <style>
-    /* Wider buttons, easier to tap */
-    div.stButton > button {
-        width: 100%;
-        min-height: 48px;
-        font-size: 1.1rem;
-        font-weight: bold;
-        border-radius: 8px;
-    }
-    /* Tighten up padding on mobile */
     .block-container {
         padding-top: 1rem;
         padding-left: 1rem;
         padding-right: 1rem;
+        max-width: 480px;
     }
-    /* Larger word display */
-    h2 {
-        font-size: 2rem !important;
-        letter-spacing: 0.3rem;
-    }
+    h2 { font-size: 1.8rem !important; letter-spacing: 0.25rem; }
+    h3 { font-size: 1.1rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -98,74 +86,66 @@ if todays_rows.empty:
     st.error("No word set for today.")
     st.stop()
 
-word = todays_rows["Word"].iloc[0]
+word = todays_rows["Word"].iloc[0].upper()
 desc = todays_rows["Description"].iloc[0]
 
 # -----------------------------
-# Title
+# Session state
 # -----------------------------
 
-st.markdown(
-    "<h2 style='text-align: center;'>Daily Word Learner 💛</h2>",
-    unsafe_allow_html=True
-)
+key = "w1"
+
+if f"clicked_{key}" not in st.session_state:
+    st.session_state[f"clicked_{key}"] = set()
+if f"wrong_{key}" not in st.session_state:
+    st.session_state[f"wrong_{key}"] = 1
+if f"game_over_{key}" not in st.session_state:
+    st.session_state[f"game_over_{key}"] = False
+if f"popup_done_{key}" not in st.session_state:
+    st.session_state[f"popup_done_{key}"] = False
+
+# -----------------------------
+# Handle letter click via query param
+# -----------------------------
+
+params = st.query_params
+if "letter" in params and not st.session_state[f"game_over_{key}"]:
+    letter = params["letter"].upper()
+    if letter in string.ascii_uppercase and letter not in st.session_state[f"clicked_{key}"]:
+        st.session_state[f"clicked_{key}"].add(letter)
+        if letter not in word:
+            st.session_state[f"wrong_{key}"] += 1
+    st.query_params.clear()
+    st.rerun()
 
 # =========================================================
 # POPUPS
 # =========================================================
 
 @st.dialog("🎉 You Win!")
-def win_popup(word):
+def win_popup(w):
     st.image("win.jpg", use_container_width=True)
-    st.markdown(
-        f"<h2 style='text-align:center;'>The word was {word}</h2>",
-        unsafe_allow_html=True
-    )
+    st.markdown(f"<h2 style='text-align:center;'>The word was {w}</h2>", unsafe_allow_html=True)
 
 @st.dialog("💀 Game Over")
-def lose_popup(word):
+def lose_popup(w):
     st.image("lose.jpg", use_container_width=True)
-    st.markdown(
-        f"<h2 style='text-align:center;'>The word was {word}</h2>",
-        unsafe_allow_html=True
-    )
+    st.markdown(f"<h2 style='text-align:center;'>The word was {w}</h2>", unsafe_allow_html=True)
 
 # =========================================================
-# GAME
+# UI
 # =========================================================
 
-key = "w1"
-word = word.upper()
+st.markdown("<h2 style='text-align:center;'>Daily Word Learner 💛</h2>", unsafe_allow_html=True)
+st.markdown(f"<h3 style='text-align:center;'>{desc}</h3>", unsafe_allow_html=True)
 
-if f"clicked_{key}" not in st.session_state:
-    st.session_state[f"clicked_{key}"] = set()
-
-if f"wrong_{key}" not in st.session_state:
-    st.session_state[f"wrong_{key}"] = 1
-
-if f"game_over_{key}" not in st.session_state:
-    st.session_state[f"game_over_{key}"] = False
-
-if f"popup_done_{key}" not in st.session_state:
-    st.session_state[f"popup_done_{key}"] = False
-
-# Description
-st.markdown(
-    f"<h3 style='text-align:center;'>{desc}</h3>",
-    unsafe_allow_html=True
-)
-
-# Hangman image — centred
+# Hangman image
 left, center, right = st.columns([1, 2, 1])
 with center:
-    st.image(f"step{st.session_state[f'wrong_{key}']}.PNG", width=260)
+    st.image(f"step{st.session_state[f'wrong_{key}']}.PNG", width=140)
 
 # Word display
-display_word = [
-    l if l in st.session_state[f"clicked_{key}"] else "_"
-    for l in word
-]
-
+display_word = [l if l in st.session_state[f"clicked_{key}"] else "_" for l in word]
 st.markdown(
     f"<h2 style='text-align:center;'>{' '.join(display_word)}</h2>",
     unsafe_allow_html=True
@@ -173,32 +153,69 @@ st.markdown(
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Letter buttons — 6 columns for better mobile sizing
-if not st.session_state[f"game_over_{key}"]:
-    cols = st.columns(6)
-    for i, letter in enumerate(string.ascii_uppercase):
-        with cols[i % 6]:
-            used = letter in st.session_state[f"clicked_{key}"]
-            if st.button(letter, key=f"{key}_{letter}", disabled=used):
-                st.session_state[f"clicked_{key}"].add(letter)
-                if letter not in word:
-                    st.session_state[f"wrong_{key}"] += 1
+# -----------------------------
+# Keyboard — HTML grid, works on all screen sizes
+# -----------------------------
 
-# Lose
-if (
-    st.session_state[f"wrong_{key}"] >= 8
-    and not st.session_state[f"game_over_{key}"]
-):
+if not st.session_state[f"game_over_{key}"]:
+    clicked = st.session_state[f"clicked_{key}"]
+
+    buttons_html = ""
+    for letter in string.ascii_uppercase:
+        used = letter in clicked
+        correct = letter in word and letter in clicked
+
+        if used:
+            if correct:
+                style = "background:#4caf50;color:white;opacity:0.5;cursor:default;"
+            else:
+                style = "background:#e0e0e0;color:#aaa;opacity:0.5;cursor:default;"
+            btn = f'<button style="{style}" disabled>{letter}</button>'
+        else:
+            btn = f'<a href="?letter={letter}" style="text-decoration:none;"><button>{letter}</button></a>'
+
+        buttons_html += btn
+
+    st.markdown(f"""
+    <style>
+    .keyboard {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: center;
+        margin: 0 auto;
+        max-width: 400px;
+    }}
+    .keyboard button {{
+        width: 44px;
+        height: 44px;
+        font-size: 1rem;
+        font-weight: bold;
+        border: 2px solid #555;
+        border-radius: 8px;
+        background: white;
+        color: #333;
+        cursor: pointer;
+        touch-action: manipulation;
+    }}
+    .keyboard button:active {{
+        background: #ddd;
+    }}
+    </style>
+    <div class="keyboard">{buttons_html}</div>
+    """, unsafe_allow_html=True)
+
+# -----------------------------
+# Win / Lose checks
+# -----------------------------
+
+if st.session_state[f"wrong_{key}"] >= 8 and not st.session_state[f"game_over_{key}"]:
     st.session_state[f"game_over_{key}"] = True
     if not st.session_state[f"popup_done_{key}"]:
         st.session_state[f"popup_done_{key}"] = True
         lose_popup(word)
 
-# Win
-if (
-    "_" not in display_word
-    and not st.session_state[f"game_over_{key}"]
-):
+if "_" not in display_word and not st.session_state[f"game_over_{key}"]:
     st.session_state[f"game_over_{key}"] = True
     if not st.session_state[f"popup_done_{key}"]:
         st.session_state[f"popup_done_{key}"] = True
