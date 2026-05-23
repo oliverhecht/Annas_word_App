@@ -1,23 +1,10 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import base64
+import os
 
 st.set_page_config(page_title="Daily Word", layout="centered")
-
-st.markdown("""
-<style>
-    .block-container {
-        padding-top: 1rem;
-        padding-left: 0.5rem;
-        padding-right: 0.5rem;
-        max-width: 480px;
-    }
-    /* Hide the text input we use as a JS bridge */
-    div[data-testid="stTextInput"] {
-        display: none;
-    }
-</style>
-""", unsafe_allow_html=True)
 
 word_df = pd.DataFrame({
     "Word": [
@@ -82,99 +69,120 @@ if todays_rows.empty:
 target_word = todays_rows["Word"].iloc[0].upper()
 desc = todays_rows["Description"].iloc[0]
 
-key = "w1"
+# Base64-encode all 8 step images
+def img_to_b64(path):
+    ext = os.path.splitext(path)[1].lower().replace(".", "")
+    if ext == "jpg":
+        ext = "jpeg"
+    with open(path, "rb") as f:
+        data = base64.b64encode(f.read()).decode()
+    return f"data:image/{ext};base64,{data}"
 
-if f"clicked_{key}" not in st.session_state:
-    st.session_state[f"clicked_{key}"] = set()
-if f"wrong_{key}" not in st.session_state:
-    st.session_state[f"wrong_{key}"] = 1
-if f"game_over_{key}" not in st.session_state:
-    st.session_state[f"game_over_{key}"] = False
-if f"popup_done_{key}" not in st.session_state:
-    st.session_state[f"popup_done_{key}"] = False
+images_b64 = []
+for i in range(1, 9):
+    images_b64.append(img_to_b64(f"step{i}.PNG"))
 
-# Hidden text input as JS bridge — letter gets typed into it by JS, triggering a rerun
-typed = st.text_input("letter_bridge", key="letter_bridge", label_visibility="hidden")
+# Build JS array of base64 image strings
+images_js = "[" + ",".join(f'"{src}"' for src in images_b64) + "]"
 
-if typed and typed not in st.session_state[f"clicked_{key}"] and not st.session_state[f"game_over_{key}"]:
-    st.session_state[f"clicked_{key}"].add(typed)
-    if typed not in target_word:
-        st.session_state[f"wrong_{key}"] += 1
-    # Clear the bridge and rerun
-    st.session_state["letter_bridge"] = ""
-    st.rerun()
+game_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: sans-serif; background: white; padding: 12px; max-width: 480px; margin: 0 auto; }}
+  h1 {{ text-align: center; font-size: 1.4rem; margin-bottom: 6px; }}
+  #desc {{ text-align: center; font-size: 0.95rem; color: #555; margin-bottom: 14px; }}
+  #hangman-container {{ text-align: center; margin-bottom: 12px; }}
+  #hangman-container img {{ width: 120px; height: auto; }}
+  #word {{ text-align: center; font-size: 1.8rem; letter-spacing: 0.4rem; margin-bottom: 6px; font-weight: bold; }}
+  #mistakes {{ text-align: center; font-size: 0.85rem; color: #888; margin-bottom: 14px; }}
+  .kb-row {{ display: flex; justify-content: center; gap: 5px; margin-bottom: 6px; }}
+  .kb-btn {{
+    width: 34px; height: 44px;
+    background: #818384; color: white;
+    border: none; border-radius: 6px;
+    font-weight: bold; font-size: 0.9rem;
+    cursor: pointer; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }}
+  .kb-btn:disabled {{ cursor: default; }}
+  .kb-btn.correct {{ background: #4caf50; }}
+  .kb-btn.wrong {{ background: #ccc; color: #999; }}
+  #message {{ text-align: center; font-size: 1.2rem; font-weight: bold; margin-top: 16px; }}
+</style>
+</head>
+<body>
+<h1>Daily Word Learner 💛</h1>
+<div id="desc">{desc}</div>
+<div id="hangman-container"><img id="hangman-img" src="" /></div>
+<div id="word"></div>
+<div id="mistakes"></div>
+<div id="keyboard"></div>
+<div id="message"></div>
 
-@st.dialog("🎉 You Win!")
-def win_popup(w):
-    st.image("win.jpg", use_container_width=True)
-    st.markdown(f"<h2 style='text-align:center;'>The word was {w}</h2>", unsafe_allow_html=True)
+<script>
+const TARGET = "{target_word}";
+const ROWS = ["QWERTYUIOP","ASDFGHJKL","ZXCVBNM"];
+const IMAGES = {images_js};
 
-@st.dialog("💀 Game Over")
-def lose_popup(w):
-    st.image("lose.jpg", use_container_width=True)
-    st.markdown(f"<h2 style='text-align:center;'>The word was {w}</h2>", unsafe_allow_html=True)
+let clicked = new Set();
+let wrong = 0;
+let gameOver = false;
 
-st.markdown("<h2 style='text-align:center;'>Daily Word Learner 💛</h2>", unsafe_allow_html=True)
-st.markdown(f"<p style='text-align:center; font-size:1.1rem;'>{desc}</p>", unsafe_allow_html=True)
+function render() {{
+  document.getElementById("hangman-img").src = IMAGES[Math.min(wrong, IMAGES.length-1)];
 
-col1, col2, col3 = st.columns([1, 1, 1])
-with col2:
-    st.image(f"step{st.session_state[f'wrong_{key}']}.PNG", width=120)
+  const display = TARGET.split("").map(l => clicked.has(l) ? l : "_").join(" ");
+  document.getElementById("word").textContent = display;
+  document.getElementById("mistakes").textContent = `Wrong guesses: ${{wrong}} / 7`;
 
-display_word = [l if l in st.session_state[f"clicked_{key}"] else "_" for l in target_word]
-st.markdown(
-    f"<h2 style='text-align:center; letter-spacing:0.3rem;'>{' '.join(display_word)}</h2>",
-    unsafe_allow_html=True
-)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# Build Wordle-style HTML keyboard
-if not st.session_state[f"game_over_{key}"]:
-    clicked = st.session_state[f"clicked_{key}"]
-    rows = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"]
-
-    rows_html = ""
-    for row in rows:
-        row_html = '<div style="display:flex;justify-content:center;gap:5px;margin-bottom:5px;">'
-        for letter in row:
-            used = letter in clicked
-            correct = letter in target_word and letter in clicked
-            if used:
-                bg = "#4caf50" if correct else "#ccc"
-                fg = "white" if correct else "#999"
-                row_html += f'<button style="width:34px;height:44px;background:{bg};color:{fg};border:none;border-radius:6px;font-weight:bold;font-size:0.9rem;" disabled>{letter}</button>'
-            else:
-                row_html += f'<button onclick="pick(\'{letter}\')" style="width:34px;height:44px;background:#818384;color:white;border:none;border-radius:6px;font-weight:bold;font-size:0.9rem;cursor:pointer;touch-action:manipulation;">{letter}</button>'
-        row_html += '</div>'
-        rows_html += row_html
-
-    keyboard_html = f"""
-    <div style="padding:4px 0;">
-        {rows_html}
-    </div>
-    <script>
-    function pick(l) {{
-        // Find the hidden Streamlit text input and update it
-        const inputs = window.parent.document.querySelectorAll('input[type=text]');
-        for (const inp of inputs) {{
-            inp.value = l;
-            inp.dispatchEvent(new Event('input', {{bubbles: true}}));
-        }}
+  const kb = document.getElementById("keyboard");
+  kb.innerHTML = "";
+  ROWS.forEach(row => {{
+    const div = document.createElement("div");
+    div.className = "kb-row";
+    for (const l of row) {{
+      const btn = document.createElement("button");
+      btn.className = "kb-btn";
+      btn.textContent = l;
+      if (clicked.has(l)) {{
+        btn.disabled = true;
+        btn.classList.add(TARGET.includes(l) ? "correct" : "wrong");
+      }} else {{
+        btn.addEventListener("click", () => guess(l));
+      }}
+      div.appendChild(btn);
     }}
-    </script>
-    """
+    kb.appendChild(div);
+  }});
 
-    st.components.v1.html(keyboard_html, height=160)
+  if (!gameOver) {{
+    if (!display.includes("_")) {{
+      gameOver = true;
+      document.getElementById("message").textContent = "🎉 You got it!";
+      kb.innerHTML = "";
+    }} else if (wrong >= 7) {{
+      gameOver = true;
+      document.getElementById("message").textContent = `💀 Game over! The word was ${{TARGET}}`;
+      kb.innerHTML = "";
+    }}
+  }}
+}}
 
-if st.session_state[f"wrong_{key}"] >= 8 and not st.session_state[f"game_over_{key}"]:
-    st.session_state[f"game_over_{key}"] = True
-    if not st.session_state[f"popup_done_{key}"]:
-        st.session_state[f"popup_done_{key}"] = True
-        lose_popup(target_word)
+function guess(l) {{
+  if (gameOver || clicked.has(l)) return;
+  clicked.add(l);
+  if (!TARGET.includes(l)) wrong++;
+  render();
+}}
 
-if "_" not in display_word and not st.session_state[f"game_over_{key}"]:
-    st.session_state[f"game_over_{key}"] = True
-    if not st.session_state[f"popup_done_{key}"]:
-        st.session_state[f"popup_done_{key}"] = True
-        win_popup(target_word)
+render();
+</script>
+</body>
+</html>
+"""
+
+st.components.v1.html(game_html, height=560, scrolling=False)
